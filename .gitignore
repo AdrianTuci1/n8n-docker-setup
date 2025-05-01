@@ -1,0 +1,7 @@
+.n8n_data
+.node_modules
+.env
+.env.local
+.env.development
+.env.production
+.env.test

@@ -1,0 +1,438 @@
+{
+  "name": "Post Generator with OpenAI Image",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "hours"
+            }
+          ]
+        }
+      },
+      "name": "Start",
+      "type": "n8n-nodes-base.trigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    prompt: \"Generează o postare motivațională pentru antreprenori care include title, description, hashtags, image_prompt și caption pentru poster.\"\n  }\n}];"
+      },
+      "name": "Set Prompt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "{\"model\": \"gpt-4\", \"messages\": [{\"role\": \"system\", \"content\": \"Ești un expert în marketing vizual și social media. Generează un răspuns în format JSON cu următoarele câmpuri: title, description, hashtags, image_prompt, caption.\"}, {\"role\": \"user\", \"content\": \"{{ $json[\\\"prompt\\\"] }}\"}]}",
+        "headerParametersJson": "{\"Content-Type\": \"application/json\", \"Authorization\": \"Bearer {{ $credentials.openAIKey }}\"}"
+      },
+      "name": "OpenAI - GPT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "openAIKey": {
+          "id": "1",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const response = JSON.parse($json.choices[0].message.content);\n// response trebuie să aibă: title, description, hashtags, image_prompt, caption\nreturn [ { json: response } ];"
+      },
+      "name": "Parse GPT Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        950,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    ...$json,\n    image_prompt: $json.image_prompt\n  }\n}];"
+      },
+      "name": "Prepare Image Generation",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "httpMethod": "POST",
+        "url": "https://api.openai.com/v1/images/generations",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "{\"prompt\": \"{{ $json.image_prompt }}\", \"n\": 1, \"size\": \"1024x1024\"}",
+        "headerParametersJson": "{\"Content-Type\": \"application/json\", \"Authorization\": \"Bearer {{ $credentials.openAIKey }}\"}"
+      },
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "credentials": {
+        "openAIKey": {
+          "id": "1",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "delayInSeconds": 5
+      },
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "{{ $json.data[0].url }}",
+        "responseFormat": "file"
+      },
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1950,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "/data/input/image_raw.png",
+        "dataPropertyName": "data"
+      },
+      "name": "Write Image to Disk",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    ...$json,\n    caption: $json.caption\n  }\n}];"
+      },
+      "name": "Prepare Poster Generation",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "node",
+        "parameters": [
+          "/data/scripts/composePoster.js",
+          "--input",
+          "/data/input/image_raw.png",
+          "--output",
+          "/data/output/poster_final.png",
+          "--caption",
+          "{{ $json.caption }}"
+        ]
+      },
+      "name": "Generate Poster",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "/data/output/poster_final.png"
+      },
+      "name": "Read File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2950,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    ...$json,\n    posterData: $json.data\n  }\n}];"
+      },
+      "name": "Prepare Drive Upload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryDataMode": true,
+        "fileName": "{{ $json.title }}.png",
+        "folderId": "YOUR_DRIVE_FOLDER_ID",
+        "dataPropertyName": "posterData"
+      },
+      "name": "Upload Poster to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [
+        3450,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "3",
+          "name": "Google Drive Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryDataMode": true,
+        "fileName": "{{ $json.title }}_raw.png",
+        "folderId": "YOUR_DRIVE_FOLDER_ID",
+        "dataPropertyName": "data"
+      },
+      "name": "Upload Raw Image to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [
+        3450,
+        400
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "3",
+          "name": "Google Drive Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "binaryDataMode": false,
+        "fileName": "{{ $json.title }}_details.txt",
+        "folderId": "YOUR_DRIVE_FOLDER_ID",
+        "content": "Title: {{ $json.title }}\nDescription: {{ $json.description }}\nHashtags: {{ $json.hashtags }}\nImage Prompt: {{ $json.image_prompt }}\nCaption: {{ $json.caption }}"
+      },
+      "name": "Upload Details to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 1,
+      "position": [
+        3450,
+        500
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "3",
+          "name": "Google Drive Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Set Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - GPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - GPT": {
+      "main": [
+        [
+          {
+            "node": "Parse GPT Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse GPT Response": {
+      "main": [
+        [
+          {
+            "node": "Prepare Image Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Image Generation": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Write Image to Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Image to Disk": {
+      "main": [
+        [
+          {
+            "node": "Prepare Poster Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Poster Generation": {
+      "main": [
+        [
+          {
+            "node": "Generate Poster",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Poster": {
+      "main": [
+        [
+          {
+            "node": "Read File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read File": {
+      "main": [
+        [
+          {
+            "node": "Prepare Drive Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Drive Upload": {
+      "main": [
+        [
+          {
+            "node": "Upload Poster to Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload Raw Image to Drive",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload Details to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Poster to Drive": {
+      "main": []
+    },
+    "Upload Raw Image to Drive": {
+      "main": []
+    },
+    "Upload Details to Drive": {
+      "main": []
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
